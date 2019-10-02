@@ -4,8 +4,9 @@ Created on Thu May 23 13:34:02 2019
 
 @author: payam.bagheri
 """
-
-
+# =============================================================================
+# Libraries
+# =============================================================================
 import pandas as pd
 from os import path
 from tqdm import tqdm
@@ -21,9 +22,21 @@ from sklearn.utils import shuffle
 nltk.download('punkt')
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
+# libraries needed for deep learning
+import torchvision.transforms as transforms
+from torch.utils.data.sampler import SubsetRandomSampler
+import torch
+from torch.utils.data.dataset import Dataset
+from torch.utils.data import DataLoader
+import torch.optim as optim
+import gensim
+from sklearn.feature_extraction.text import TfidfVectorizer
 
+
+# =============================================================================
+# Inputs
+# =============================================================================
 dir_path = path.dirname(path.dirname(path.abspath(__file__)))
-
 
 #print(dir_path)
 mesdic = pd.read_excel(dir_path + '/0_input_data/bigfoot_messaging_dic.xlsx')
@@ -33,23 +46,25 @@ mesdic['statement'] = mesdic['statement'].str.lower()
 
 all_data = pd.read_excel(dir_path + '/0_input_data/messaging-open-end-all-quarters-english-cleaned.xlsx')
 all_data = shuffle(all_data)
-
-# specifying the proportions of the training, validation and test data
-valid_size = 0.1
-train_percent = 0.8
-valid_percent = 0.9
-
-all_data.shape[0]
-
-train_data = all_data[:int(train_percent*all_data.shape[0])]
-train_data.shape
-
 data = all_data
 
 
 min(data.aw_unaided_ad_message_en_sroec1)
 data.columns
 
+# specifying the proportions of the training, validation and test data
+valid_size = 0.1
+train_percent = 0.8
+valid_percent = 0.9
+
+'''
+# Load Google's pre-trained Word2Vec model.
+model = gensim.models.KeyedVectors.load_word2vec_format('C:/Users/Payam/Downloads/GoogleNews-vectors-negative300.bin', binary=True)
+'''
+
+# =============================================================================
+# General Functions
+# =============================================================================
 # measures the similarity of two strings
 def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
@@ -67,7 +82,7 @@ def takeFirst(elem):
 def isNaN(num):
     return num != num
 
-# test example ******
+# test example *******************
 similar('the', 'they')
 
 h = ['hormones',
@@ -81,8 +96,51 @@ h = ['hormones',
 'horomons']
 
 [similar(x,'hormones') for x in h]
-# ******************
+# ********************************
 
+def takeSecond(elem):
+    return elem[1]
+
+
+def softmax(l):
+    summ = sum([np.exp(i) for i in l])
+    sl = [np.exp(i)/summ for i in l]
+    return sl
+
+def get_vec(word):
+    try:
+        vec = model.get_vector(word)
+    except KeyError:
+        vec = np.zeros(300)
+    return vec
+
+# replaces a number with n is the number is above n
+def if_replace(x,n):
+    if x > n:
+        r = n
+    else:
+        r = x
+    return r
+
+def str_join(lis):
+    st = str()
+    for i in lis:
+        st = " ".join([st,i])
+    return st
+
+def weights_init_normal(m):
+    classname = m.__class__.__name__
+    # for every Linear layer in a model..
+    if classname.find('Linear') != -1:
+        # get the number of the inputs
+        n = m.in_features
+        y = (1.0/np.sqrt(n))
+        m.weight.data.normal_(0, y)
+        m.bias.data.fill_(0)
+        
+# =============================================================================
+# Data Exploration and preparation
+# =============================================================================
 # this loop finds the (condensed) unique words in the data and stores their frequency in a dictionary
 # the unique words list is a condensed list, i.e. different words that are "too" similar to each other
 # are represented by the one word.
@@ -106,7 +164,7 @@ for ind in tqdm(data.index):
                 unique_words_freq_dic[is_unique[0][1]][data['aw_unaided_ad_message_en_sroec1'][ind]] += 1
             except KeyError:
                 unique_words_freq_dic[is_unique[0][1]][data['aw_unaided_ad_message_en_sroec1'][ind]] = 1
-                
+               
 len(unique_words)
 
 # creating a new column that contains a condensed version of the text responses where words are replaced by the
@@ -125,11 +183,10 @@ for ind in tqdm(data.index):
     data['aw_unaided_ad_message_dense'][ind] = dense_st
         #print(sim_wor)
 
-def str_join(lis):
-    st = str()
-    for i in lis:
-        st = " ".join([st,i])
-    return st
+
+
+
+all_data.shape[0]
 
 # joining words to make a sentense
 data['aw_unaided_ad_message_dense'] = data['aw_unaided_ad_message_dense'].apply(lambda x: str_join(x))
@@ -141,14 +198,8 @@ unique_words_freq = pd.DataFrame(unique_words_freq_dic)
 unique_words_freq = unique_words_freq.fillna(0)
 unique_words_freq = unique_words_freq.transpose()
 
-# replaces a number with n is the number is above n
-def if_replace(x,n):
-    if x > n:
-        r = n
-    else:
-        r = x
-    return r
 
+'''
 # calculating TF-IDF for the above unique words
 # term frequency
 unique_words_freq['idf'] = -1*np.log(unique_words_freq.sum(axis=1)/3000)
@@ -168,23 +219,32 @@ tfidf_dict = dict(zip(unique_words_freq['words'],unique_words_freq['tfidf']))
 unique_words_freq.to_csv(dir_path + '/0_output/unique_words_freq.csv')
 
 # max(data.aw_unaided_ad_message[data.aw_unaided_ad_message.notnull()].apply(lambda x: len(mess_prep(str(x)))))
-
-
 '''
-# Load Google's pre-trained Word2Vec model.
-import gensim
-model = gensim.models.KeyedVectors.load_word2vec_format('C:/Users/Payam/Downloads/GoogleNews-vectors-negative300.bin', binary=True)  
 
-def get_vec(word):
-    try:
-        vec = model.get_vector(word)
-    except KeyError:
-        vec = np.zeros(300)
-    return vec
-'''
+corpus = list(data['aw_unaided_ad_message_dense'])
+
+tf_idf_vect = TfidfVectorizer()
+final_tf_idf = tf_idf_vect.fit_transform(corpus)
+tfidf_feat = tf_idf_vect.get_feature_names()
+
+word_tfidf = pd.DataFrame(final_tf_idf.toarray())
+word_tfidf.columns = tfidf_feat 
+
+for i in word_tfidf.index: 
+    temp = pd.DataFrame(word_tfidf.iloc[i])
+    temp = temp.sort_values(by=[i],ascending = False)
+    temp = temp[temp[i] > 0.1]
+    temp['words'] = temp.index
+    temp['tups'] = list(zip(temp['words'], temp[i]))
+    resp_sentences['words'].iloc[i] = list(temp['words'])
+    resp_sentences['num_words'].iloc[i] = len(resp_sentences['clean_sentences'].iloc[i])
+    resp_sentences['num_sig_words'].iloc[i] = len(list(temp['words']))
+    resp_sentences['tfidf'].iloc[i] = list(temp['tups'])
+
+resp_sentences['sig_word_ratio'] = resp_sentences['num_sig_words']/resp_sentences['num_words']
+
 
 all_messages_tfidf = np.zeros((data.shape[0],50*300+2))
-
 
 # this loop creates message vectors by including tfidf weights
 for i in tqdm(data.index):
@@ -209,6 +269,11 @@ all_messages_tfidf.to_csv(dir_path + '/0_output/bigfoot_message_tfidf_vectors.cs
 data_dense = pd.read_csv(dir_path + '/0_output/bigfoot_dense_data.csv')        
 all_messages = np.zeros((data_dense.shape[0],50*300+2))
 
+train_data = all_data[:int(train_percent*all_data.shape[0])]
+train_data.shape
+
+'''
+
 # this loop creates message vectors without including tfidf weights
 for i in tqdm(data_dense.index):
     mess = data_dense.aw_unaided_ad_message_dense.loc[i]
@@ -228,12 +293,40 @@ all_messages.iloc[:,-1] = data_dense.aw_unaided_ad_message
 
 all_messages.to_csv(dir_path + '/0_output/bigfoot_message_vectors.csv', index=False)
 
-'''
+
 vecdata = pd.read_csv(dir_path + '/0_input_data/bigfoot_message_vectors.csv')
 vecdata.columns
 max(vecdata['15000'])
 min(vecdata['15000'])
+'''
+'''
+#Applying TF-IDF scores to the model vectors
+tfidf_sent_vectors = []; # the tfidf-w2v for each sentence/review is stored in this list
+row=0;
+errors=0
+for sent in tqdm(tokens): # for each review/sentence
+    sent_vec = np.zeros(100) # as word vectors are of zero length
+    weight_sum =0; # num of words with a valid vector in the sentence/review
+    for word in sent: # for each word in a review/sentence
+        try:
+            vec = model.wv[word]
+            # obtain the tf_idfidf of a word in a sentence/review
+            tfidf = final_tf_idf [row, tfidf_feat.index(word)]
+            sent_vec += (vec * tfidf)
+            weight_sum += tfidf
+        except:
+            errors =+1
+            pass
+    sent_vec /= weight_sum
+    #print(np.isnan(np.sum(sent_vec)))
+    tfidf_sent_vectors.append(sent_vec)
+    row += 1
+    print('errors noted: '+str(errors))
+'''
 
+
+'''
+# just a sneak peek at the data
 folder_dataset = dir_path + '/0_input_data'
 with open(folder_dataset + "/bigfoot_message_vectors.csv") as f:
     i = 0
@@ -245,13 +338,8 @@ with open(folder_dataset + "/bigfoot_message_vectors.csv") as f:
             print(line.split(',')[-1])
             #print(type(int(line.split(',')[-1])))
         i += 1
-
-
-valid_size = 0.1
-train_percent = 0.8
-valid_percent = 0.9
 '''
-'''
+
 # convert data to a normalized torch.FloatTensor
 #transform = transforms.Compose([transforms.ToTensor()])
 
@@ -275,18 +363,12 @@ test_vecs.to_csv(dir_path + '/0_input_data/bigfoot_test_vectors.csv', index=Fals
 
 
 
-import torchvision.transforms as transforms
-from torch.utils.data.sampler import SubsetRandomSampler
-
-import torch
-from torch.utils.data.dataset import Dataset
-from torch.utils.data import DataLoader
 
 train_dataset = dir_path + '\\0_input_data\\bigfoot_train_vectors.csv'
 valid_dataset = dir_path + '\\0_input_data\\bigfoot_valid_vectors.csv'
 test_dataset = dir_path + '\\0_input_data\\bigfoot_test_vectors.csv'
 
-
+# NETTING THE LEVELS
 # the 1st list is the levels that are gonna keep their identity (although relabelled) and
 # the 2nd list are the levels that are gonna be combined into one level
 big_levels = [1, 8, 9]
@@ -295,6 +377,7 @@ big_level_conv_dic = {1:1, 8:1, 9:1}
 mid_level_conv_dic = {13:2, 5:2, 17:2, 16:2, 7:2, 2:2, 25:2, 4:2}
 to_be_combined_level = [14, 11, 18, 19, 3, 10, 12, 24, 6, 20, 15, 23, 26, 21, 22]
 
+# Data loader machine
 class DriveData(Dataset):
     def __init__(self, datasetf, transform=None):
         self.__xs = []
@@ -372,7 +455,9 @@ test_loader = DataLoader(test_data, batch_size=1, num_workers=num_workers)
 loaders = {'train': train_loader, 'valid': valid_loader, 'test': test_loader}
 
 
-
+# =============================================================================
+# Classification algorithm
+# =============================================================================
 # specify the image classes
 #classes = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']     
 
@@ -581,15 +666,7 @@ class Net(nn.Module):
         #x = self.sig(x)
         return x
 
-def weights_init_normal(m):
-    classname = m.__class__.__name__
-    # for every Linear layer in a model..
-    if classname.find('Linear') != -1:
-        # get the number of the inputs
-        n = m.in_features
-        y = (1.0/np.sqrt(n))
-        m.weight.data.normal_(0, y)
-        m.bias.data.fill_(0)
+
 
 # create a complete CNN
 model = Net()
@@ -599,14 +676,15 @@ print(model)
 model.apply(weights_init_normal)
 
 
-import torch.optim as optim
-import torch.nn as nn
+
 
 ### loss function
 # It is useful when training a classification problem with C classes. 
 # If provided, the optional argument weight should be a 1D Tensor assigning 
 # weight to each of the classes. This is particularly useful when you have an 
 # unbalanced training set.
+
+# weight factors for the levels
 #ratios = [0.2360, 0.0425, 0.0130, 0.0370, 0.0603, 0.0045, 0.0464, 0.1332, 0.0827, 0.0100, 0.0272, 0.0084, 0.0749, 0.0282, 0.0010, 0.0535, 0.0561, 0.0207, 0.0172, 0.0013, 0.0006, 0.0000, 0.0010, 0.0052, 0.0382, 0.0010]
 ratios = [0.235980551, 0.133225284, 0.082658023, 0.074878444, 0.060291734, 0.056077796, 0.053484603, 0.046353323, 0.042463533, 0.038249595, 0.036952998, 0.139384117]
 ratios_inv = [max(ratios)/(x+0.0001) for x in ratios]
@@ -709,21 +787,9 @@ model_mess = train(200, loaders, model, optimizer, lr,
 
 
 
-#import pandas as pd
-#import torch
-#from tqdm import tqdm
-
 #model_mess = torch.load('C:/Users/Payam/Dropbox/0_output/bigfoot_messaging_NN/model_messaging.pt')
 
-def takeSecond(elem):
-    return elem[1]
-    
 
-
-def softmax(l):
-    summ = sum([np.exp(i) for i in l])
-    sl = [np.exp(i)/summ for i in l]
-    return sl
 
 model_mess.eval()
 test_results = []
@@ -752,4 +818,4 @@ test_results=pd.DataFrame(test_results,columns=range(22))
     
 test_results.head()
 test_results.to_csv(dir_path + '/0_output/res.csv')
-'''
+
